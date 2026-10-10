@@ -61,21 +61,63 @@ object TunnelEngine {
         AppLogger.d("Connecting direct TCP socket to ${config.serverHost}:${config.serverPort}")
         val socket = createProtectedSocket(vpnService)
         socket.connect(InetSocketAddress(config.serverHost, config.serverPort), timeoutMs)
-        AppLogger.d("TCP connection established. Performing SSH protocol handshake...")
 
         val out = socket.getOutputStream()
         val `in` = socket.getInputStream()
+
+        var serverBanner = ""
+
+        // If custom HTTP Payload is provided in SSH Direct mode:
+        if (config.payload.isNotBlank()) {
+            AppLogger.d("Direct Payload Injection active. Formatting payload...")
+            val payloadChunks = PayloadFormatter.format(
+                template = config.payload,
+                targetHost = config.serverHost,
+                targetPort = config.serverPort
+            )
+            for ((index, chunk) in payloadChunks.withIndex()) {
+                AppLogger.d("Sending payload chunk ${index + 1}/${payloadChunks.size} (${chunk.length} bytes)")
+                out.write(chunk.toByteArray(StandardCharsets.UTF_8))
+                out.flush()
+                if (index < payloadChunks.size - 1) {
+                    Thread.sleep(100)
+                }
+            }
+
+            val responseStatus = readLine(`in`)
+            AppLogger.i("Server Response: $responseStatus")
+            if (responseStatus.startsWith("SSH-")) {
+                serverBanner = responseStatus
+                AppLogger.s("Direct SSH banner received after payload injection.")
+            } else {
+                var lines = 0
+                while (lines < 30) {
+                    val headerLine = readLine(`in`)
+                    lines++
+                    if (headerLine.isEmpty() || headerLine == "\r") break
+                    if (headerLine.startsWith("SSH-")) {
+                        serverBanner = headerLine
+                        break
+                    }
+                }
+                AppLogger.s("Payload injected successfully. Upgrading to SSH stream...")
+            }
+        } else {
+            AppLogger.d("TCP connection established. Performing SSH protocol handshake...")
+        }
 
         // Send SSH client identification banner
         val clientBanner = "SSH-2.0-DarkTunnel_1.0\r\n"
         out.write(clientBanner.toByteArray(StandardCharsets.UTF_8))
         out.flush()
 
-        // Read server identification banner
-        val serverBanner = readLine(`in`)
+        // Read server identification banner if not already received
+        if (serverBanner.isBlank()) {
+            serverBanner = readLine(`in`)
+        }
         AppLogger.i("SSH Server Identification: $serverBanner")
 
-        return TunnelConnection(socket, `in`, out, "SSH Direct")
+        return TunnelConnection(socket, `in`, out, if (config.payload.isNotBlank()) "SSH Direct + Payload" else "SSH Direct")
     }
 
     private fun connectSshSsl(
@@ -93,14 +135,55 @@ object TunnelEngine {
         val out = sslSocket.getOutputStream()
         val `in` = sslSocket.getInputStream()
 
+        var serverBanner = ""
+
+        // If custom HTTP payload is configured over SSL/TLS:
+        if (config.payload.isNotBlank()) {
+            AppLogger.d("SSL + Payload Injection active. Sending payload over TLS...")
+            val payloadChunks = PayloadFormatter.format(
+                template = config.payload,
+                targetHost = config.serverHost,
+                targetPort = config.serverPort
+            )
+            for ((index, chunk) in payloadChunks.withIndex()) {
+                AppLogger.d("Sending SSL payload chunk ${index + 1}/${payloadChunks.size} (${chunk.length} bytes)")
+                out.write(chunk.toByteArray(StandardCharsets.UTF_8))
+                out.flush()
+                if (index < payloadChunks.size - 1) {
+                    Thread.sleep(100)
+                }
+            }
+
+            val responseStatus = readLine(`in`)
+            AppLogger.i("TLS Server Response: $responseStatus")
+            if (responseStatus.startsWith("SSH-")) {
+                serverBanner = responseStatus
+                AppLogger.s("Direct SSH banner received over TLS after payload.")
+            } else {
+                var lines = 0
+                while (lines < 30) {
+                    val headerLine = readLine(`in`)
+                    lines++
+                    if (headerLine.isEmpty() || headerLine == "\r") break
+                    if (headerLine.startsWith("SSH-")) {
+                        serverBanner = headerLine
+                        break
+                    }
+                }
+                AppLogger.s("SSL Payload injected. Upgrading to SSH...")
+            }
+        }
+
         val clientBanner = "SSH-2.0-DarkTunnel_TLS_1.0\r\n"
         out.write(clientBanner.toByteArray(StandardCharsets.UTF_8))
         out.flush()
 
-        val serverBanner = readLine(`in`)
+        if (serverBanner.isBlank()) {
+            serverBanner = readLine(`in`)
+        }
         AppLogger.i("SSH over TLS Banner: $serverBanner")
 
-        return TunnelConnection(sslSocket, `in`, out, "SSH over SSL/TLS")
+        return TunnelConnection(sslSocket, `in`, out, if (config.payload.isNotBlank()) "SSH SSL + Payload" else "SSH over SSL/TLS")
     }
 
     private fun connectSshPayload(

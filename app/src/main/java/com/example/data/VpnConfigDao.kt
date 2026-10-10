@@ -14,6 +14,9 @@ interface VpnConfigDao {
     @Query("SELECT * FROM vpn_configs ORDER BY isFavorite DESC, createdAt DESC")
     fun getAllConfigs(): Flow<List<VpnConfig>>
 
+    @Query("SELECT * FROM vpn_configs")
+    suspend fun getAllConfigsSync(): List<VpnConfig>
+
     @Query("SELECT * FROM vpn_configs WHERE id = :id LIMIT 1")
     suspend fun getConfigById(id: String): VpnConfig?
 

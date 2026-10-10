@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -61,6 +62,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -353,6 +356,22 @@ fun ConfigItemCard(
                             color = ElectricBlue
                         )
                     }
+                    if (config.payload.isNotBlank()) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(CyanPrimary.copy(alpha = 0.15f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "+ Payload",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = CyanPrimary
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "${config.serverHost}:${config.serverPort}",
@@ -452,6 +471,7 @@ fun EditConfigDialog(
     var payload by remember { mutableStateOf(initialConfig.payload) }
     var uuid by remember { mutableStateOf(initialConfig.uuid) }
     var path by remember { mutableStateOf(initialConfig.path) }
+    var isPayloadVisible by remember { mutableStateOf(initialConfig.payload.isNotBlank() || initialConfig.protocol == TunnelProtocol.SSH_HTTP_PAYLOAD) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -570,32 +590,163 @@ fun EditConfigDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                if (selectedProtocol == TunnelProtocol.SSH_HTTP_PAYLOAD) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = proxyHost,
-                            onValueChange = { proxyHost = it },
-                            label = { Text("Proxy Host") },
-                            colors = dialogTextFieldColors(),
-                            modifier = Modifier.weight(2f)
-                        )
-                        OutlinedTextField(
-                            value = proxyPort,
-                            onValueChange = { proxyPort = it },
-                            label = { Text("Proxy Port") },
-                            colors = dialogTextFieldColors(),
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
+                if (selectedProtocol == TunnelProtocol.SSH_DIRECT ||
+                    selectedProtocol == TunnelProtocol.SSH_SSL ||
+                    selectedProtocol == TunnelProtocol.SSH_HTTP_PAYLOAD
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(DarkSurfaceElevated)
+                            .border(
+                                1.dp,
+                                if (isPayloadVisible) CyanPrimary.copy(alpha = 0.5f) else DarkBorder,
+                                RoundedCornerShape(10.dp)
+                            )
+                            .padding(10.dp)
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { isPayloadVisible = !isPayloadVisible },
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Code,
+                                        contentDescription = null,
+                                        tint = if (isPayloadVisible) CyanPrimary else TextMuted,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = "HTTP Payload (Custom Injection)",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextPrimary
+                                        )
+                                        Text(
+                                            text = if (isPayloadVisible) "Showing payload (Tap to Hide)" else "Hidden (Tap to Show & Configure)",
+                                            fontSize = 10.sp,
+                                            color = if (isPayloadVisible) CyanPrimary else TextMuted
+                                        )
+                                    }
+                                }
+                                Switch(
+                                    checked = isPayloadVisible,
+                                    onCheckedChange = { isPayloadVisible = it },
+                                    colors = SwitchDefaults.colors(checkedThumbColor = CyanPrimary)
+                                )
+                            }
 
-                    OutlinedTextField(
-                        value = payload,
-                        onValueChange = { payload = it },
-                        label = { Text("HTTP Payload") },
-                        colors = dialogTextFieldColors(),
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 3
-                    )
+                            if (isPayloadVisible) {
+                                // Preset Templates
+                                Text("Quick Templates:", fontSize = 11.sp, color = TextMuted)
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    item {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(CyanPrimary.copy(alpha = 0.15f))
+                                                .clickable {
+                                                    payload = "GET / HTTP/1.1[crlf]Host: [host][crlf]Upgrade: websocket[crlf]Connection: Keep-Alive[crlf]User-Agent: [ua][crlf][crlf]"
+                                                }
+                                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                                        ) {
+                                            Text("Cloudflare WS", fontSize = 10.sp, color = CyanPrimary)
+                                        }
+                                    }
+                                    item {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(ElectricBlue.copy(alpha = 0.15f))
+                                                .clickable {
+                                                    payload = "CONNECT [host_port] [protocol][crlf]Host: [host][crlf]Connection: Keep-Alive[crlf][crlf]"
+                                                }
+                                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                                        ) {
+                                            Text("Direct CONNECT", fontSize = 10.sp, color = ElectricBlue)
+                                        }
+                                    }
+                                    item {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(NeonGreen.copy(alpha = 0.15f))
+                                                .clickable {
+                                                    payload = "GET http://[host]/ [protocol][crlf]Host: [host][crlf][split]CONNECT [host_port] [protocol][crlf][crlf]"
+                                                }
+                                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                                        ) {
+                                            Text("Front Split", fontSize = 10.sp, color = NeonGreen)
+                                        }
+                                    }
+                                    item {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(DarkBorder)
+                                                .clickable { payload = "" }
+                                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                                        ) {
+                                            Text("Clear", fontSize = 10.sp, color = TextSecondary)
+                                        }
+                                    }
+                                }
+
+                                // Helper Macro Chips
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    items(listOf("[host]", "[port]", "[host_port]", "[protocol]", "[crlf]", "[split]", "[ua]")) { chip ->
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(DarkSurface)
+                                                .border(1.dp, DarkBorder, RoundedCornerShape(4.dp))
+                                                .clickable { payload += chip }
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(chip, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = CyanPrimary)
+                                        }
+                                    }
+                                }
+
+                                OutlinedTextField(
+                                    value = payload,
+                                    onValueChange = { payload = it },
+                                    label = { Text("HTTP Payload String") },
+                                    placeholder = { Text("CONNECT [host_port] [protocol][crlf]Host: [host][crlf][crlf]") },
+                                    colors = dialogTextFieldColors(),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    minLines = 3,
+                                    textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                                )
+
+                                if (selectedProtocol == TunnelProtocol.SSH_HTTP_PAYLOAD) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedTextField(
+                                            value = proxyHost,
+                                            onValueChange = { proxyHost = it },
+                                            label = { Text("Proxy Host") },
+                                            colors = dialogTextFieldColors(),
+                                            modifier = Modifier.weight(2f)
+                                        )
+                                        OutlinedTextField(
+                                            value = proxyPort,
+                                            onValueChange = { proxyPort = it },
+                                            label = { Text("Proxy Port") },
+                                            colors = dialogTextFieldColors(),
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         },

@@ -10,6 +10,20 @@ import com.example.model.VpnConfig
 object DefaultServers {
     val INITIAL_CONFIGS = listOf(
         VpnConfig(
+            id = "server-ssh-direct-01",
+            name = "SSH Direct + Payload (Custom)",
+            countryCode = "GLOBAL",
+            countryName = "Custom Server",
+            serverHost = "127.0.0.1",
+            serverPort = 22,
+            username = "root",
+            password = "",
+            protocol = TunnelProtocol.SSH_DIRECT,
+            injectionMode = InjectionMode.DIRECT,
+            payload = "GET / HTTP/1.1[crlf]Host: [host][crlf]Upgrade: websocket[crlf]Connection: Keep-Alive[crlf]User-Agent: [ua][crlf][crlf]",
+            isFavorite = true
+        ),
+        VpnConfig(
             id = "server-bd-01",
             name = "Bangladesh Premium (BD-01)",
             countryCode = "BD",

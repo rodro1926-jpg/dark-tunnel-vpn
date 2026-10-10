@@ -87,8 +87,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isLoadingApps: StateFlow<Boolean> = _isLoadingApps.asStateFlow()
 
     init {
-        // Restore active config or pick first
+        // Restore active config or pick first, and seed SSH direct profile if missing
         viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                val existing = database.vpnConfigDao().getAllConfigsSync()
+                if (existing.none { it.protocol == com.example.model.TunnelProtocol.SSH_DIRECT }) {
+                    com.example.data.DefaultServers.INITIAL_CONFIGS.firstOrNull { it.protocol == com.example.model.TunnelProtocol.SSH_DIRECT }?.let {
+                        database.vpnConfigDao().insertConfig(it)
+                    }
+                }
+            }
             configs.collect { list ->
                 if (list.isNotEmpty() && VpnController.activeConfig.value == null) {
                     val savedId = preferences.activeConfigId
@@ -97,6 +105,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    fun updateActiveConfigPayload(newPayload: String) {
+        val current = activeConfig.value ?: return
+        val updated = current.copy(payload = newPayload)
+        saveConfig(updated)
+    }
+
+    fun updateActiveConfigServer(host: String, port: Int, user: String, pass: String) {
+        val current = activeConfig.value ?: return
+        val updated = current.copy(
+            serverHost = host,
+            serverPort = port,
+            username = user,
+            password = pass
+        )
+        saveConfig(updated)
     }
 
     fun selectConfig(config: VpnConfig) {
