@@ -1,0 +1,139 @@
+name: Dark Tunnel Android Build & Release CI
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-debug:
+    name: Build Debug APK & Verify Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Verify Gradle Wrapper
+        run: |
+          chmod +x gradlew || true
+
+      - name: Run Unit Tests
+        run: |
+          echo "Running Robolectric and JUnit unit tests..."
+          gradle :app:testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Assemble Debug APK
+        run: |
+          echo "Compiling Debug APK..."
+          gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Verify Debug APK Output
+        run: |
+          if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
+            echo "Debug APK built successfully:"
+            ls -lh app/build/outputs/apk/debug/app-debug.apk
+          else
+            echo "Error: app-debug.apk not found!" && exit 1
+          fi
+
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DarkTunnel-Debug-v1.0.0
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+  build-release:
+    name: Build Signed Release APK & Publish GitHub Release
+    needs: build-debug
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Decode Signing Keystore
+        id: decode_keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 --decode > my-upload-key.jks
+            echo "has_keystore=true" >> $GITHUB_OUTPUT
+            echo "Signing keystore decoded successfully."
+          else
+            echo "has_keystore=false" >> $GITHUB_OUTPUT
+            echo "Warning: KEYSTORE_BASE64 secret not set. Release signing requires KEYSTORE_BASE64, STORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD."
+          fi
+
+      - name: Assemble Release APK (Signed)
+        if: steps.decode_keystore.outputs.has_keystore == 'true'
+        env:
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_PATH: my-upload-key.jks
+        run: |
+          gradle :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Fallback to Debug APK if no Release Keystore
+        if: steps.decode_keystore.outputs.has_keystore != 'true'
+        run: |
+          echo "Building unsigned/debug APK for release distribution..."
+          gradle :app:assembleDebug --no-daemon
+          mkdir -p app/build/outputs/apk/release/
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/release/app-release.apk
+
+      - name: Upload Release APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DarkTunnel-Release-v1.0.0
+          path: app/build/outputs/apk/release/app-release.apk
+          retention-days: 90
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/release/app-release.apk
+          name: "Dark Tunnel VPN ${{ github.ref_name }}"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ### Dark Tunnel VPN Release ${{ github.ref_name }}
+            
+            #### Assets Included
+            - `app-release.apk`: Real installable Android application APK.
+            
+            #### Features & Protocols
+            - SSH Direct, SSH over SSL/TLS, SSH with HTTP Request Payload
+            - Xray VMess, Xray VLESS, Trojan, Shadowsocks, SOCKS5, and DNSTT / SlowDNS
+            - Advanced HTTP Request Payload Generator and Macro Engine
+            - Real-time Traffic Counters (Download/Upload speeds, duration, ping latency)
+            - Host Checker, IP Hunter, Ping Diagnostics, and DoH / DNS Tools
+            - Per-App VPN filter (Bypass or Route specific apps)
+            - AES-256-GCM Encrypted Provider Configuration Export

@@ -1,0 +1,6 @@
+{
+  "name": "Dark Tunnel",
+  "description": "Professional tunneling VPN client supporting SSH, SSL/TLS, custom HTTP payloads, Xray VMess/VLESS, SOCKS, Trojan, Shadowsocks, and DNSTT.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
