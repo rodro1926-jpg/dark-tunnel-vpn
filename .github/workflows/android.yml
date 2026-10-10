@@ -26,21 +26,29 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
 
-      - name: Verify Gradle Wrapper
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Generate Debug Keystore
         run: |
-          chmod +x gradlew || true
+          if [ ! -f "debug.keystore" ]; then
+            echo "Generating debug keystore for build runner..."
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Grant Execute Permission to Gradle Wrapper
+        run: chmod +x gradlew
 
       - name: Run Unit Tests
         run: |
           echo "Running Robolectric and JUnit unit tests..."
-          gradle :app:testDebugUnitTest --no-daemon --stacktrace
+          ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
 
       - name: Assemble Debug APK
         run: |
           echo "Compiling Debug APK..."
-          gradle :app:assembleDebug --no-daemon --stacktrace
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
 
       - name: Verify Debug APK Output
         run: |
@@ -73,7 +81,18 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Grant Execute Permission to Gradle Wrapper
+        run: chmod +x gradlew
+
+      - name: Generate Debug Keystore (Fallback)
+        run: |
+          if [ ! -f "debug.keystore" ]; then
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
 
       - name: Decode Signing Keystore
         id: decode_keystore
@@ -86,7 +105,7 @@ jobs:
             echo "Signing keystore decoded successfully."
           else
             echo "has_keystore=false" >> $GITHUB_OUTPUT
-            echo "Warning: KEYSTORE_BASE64 secret not set. Release signing requires KEYSTORE_BASE64, STORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD."
+            echo "Warning: KEYSTORE_BASE64 secret not set. Falling back to debug APK distribution."
           fi
 
       - name: Assemble Release APK (Signed)
@@ -97,13 +116,13 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           KEYSTORE_PATH: my-upload-key.jks
         run: |
-          gradle :app:assembleRelease --no-daemon --stacktrace
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace
 
       - name: Fallback to Debug APK if no Release Keystore
         if: steps.decode_keystore.outputs.has_keystore != 'true'
         run: |
-          echo "Building unsigned/debug APK for release distribution..."
-          gradle :app:assembleDebug --no-daemon
+          echo "Building debug APK for release distribution..."
+          ./gradlew :app:assembleDebug --no-daemon
           mkdir -p app/build/outputs/apk/release/
           cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/release/app-release.apk
 
@@ -126,10 +145,10 @@ jobs:
           body: |
             ### Dark Tunnel VPN Release ${{ github.ref_name }}
             
-            #### Assets Included
-            - `app-release.apk`: Real installable Android application APK.
+            #### Real Android APK Download
+            Download `app-release.apk` below and install it directly on your Android device.
             
-            #### Features & Protocols
+            #### Supported Tunneling Protocols
             - SSH Direct, SSH over SSL/TLS, SSH with HTTP Request Payload
             - Xray VMess, Xray VLESS, Trojan, Shadowsocks, SOCKS5, and DNSTT / SlowDNS
             - Advanced HTTP Request Payload Generator and Macro Engine
